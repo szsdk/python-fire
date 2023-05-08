@@ -458,6 +458,20 @@ def _Fire(component, args, parsed_flag_args, context, name=None):
       used_separator = True
     assert separator not in remaining_args
 
+    if len(remaining_args) > 0 and isinstance(remaining_args[0], str):
+      if remaining_args[0] == "@":
+        if "_" in remaining_args:
+          result_index = remaining_args.index("_")
+          remaining_args[result_index] = component
+          remaining_args.pop(0)
+        else:
+          remaining_args[0] = remaining_args[1]
+          remaining_args[1] = component
+        component = context.copy()
+      elif remaining_args[0] == "!":
+        remaining_args.pop(0)
+        component = context.copy()
+
     handled = False
     candidate_errors = []
 
@@ -860,7 +874,7 @@ def _ParseKeywordArgs(args, fn_spec):
       skip_argument = False
       continue
 
-    if _IsFlag(argument):
+    if isinstance(argument, str) and _IsFlag(argument):
       # This is a named argument. We get its value from this arg or the next.
 
       # Terminology:
@@ -974,6 +988,8 @@ def _ParseValue(value, index, arg, metadata):
   Returns:
     value, parsed into the appropriate type for calling a function.
   """
+  if not isinstance(value, str):
+    return value
   parse_fn = parser.DefaultParseValue
 
   # We check to see if any parse function from the fn metadata applies here.
