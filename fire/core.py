@@ -434,6 +434,7 @@ def _Fire(component, args, parsed_flag_args, context, name=None):
 
   instance = None
   remaining_args = args
+  variable_env = dict()
   while True:
     last_component = component
     initial_args = remaining_args
@@ -460,17 +461,15 @@ def _Fire(component, args, parsed_flag_args, context, name=None):
 
     if len(remaining_args) > 0 and isinstance(remaining_args[0], str):
       if remaining_args[0] == "@":
-        if "_" in remaining_args:
-          result_index = remaining_args.index("_")
-          remaining_args[result_index] = component
-          remaining_args.pop(0)
-        else:
-          remaining_args[0] = remaining_args[1]
-          remaining_args[1] = component
-        component = context.copy()
-      elif remaining_args[0] == "!":
+        variable_env["_"] = component
         remaining_args.pop(0)
         component = context.copy()
+        component.update(variable_env)
+      elif remaining_args[0][0] == "@":
+        variable_env[remaining_args[0][1:]] = component
+        remaining_args.pop(0)
+        component = context.copy()
+        component.update(variable_env)
 
     handled = False
     candidate_errors = []
@@ -490,6 +489,7 @@ def _Fire(component, args, parsed_flag_args, context, name=None):
             component,
             remaining_args,
             component_trace,
+            variable_env,
             treatment='class' if is_class else 'routine',
             target=component.__name__)
         handled = True
@@ -581,6 +581,7 @@ def _Fire(component, args, parsed_flag_args, context, name=None):
             component,
             remaining_args,
             component_trace,
+            variable_env,
             treatment='callable')
         handled = True
       except FireError as error:
@@ -670,7 +671,7 @@ def _GetMember(component, args):
   raise FireError('Could not consume arg:', arg)
 
 
-def _CallAndUpdateTrace(component, args, component_trace, treatment='class',
+def _CallAndUpdateTrace(component, args, component_trace, variable_env, treatment='class',
                         target=None):
   """Call the component by consuming args from args, and update the FireTrace.
 
@@ -694,7 +695,7 @@ def _CallAndUpdateTrace(component, args, component_trace, treatment='class',
   filename, lineno = inspectutils.GetFileAndLine(component)
   metadata = decorators.GetMetadata(component)
   fn = component.__call__ if treatment == 'callable' else component
-  parse = _MakeParseFn(fn, metadata)
+  parse = _MakeParseFn(fn, metadata, variable_env)
   (varargs, kwargs), consumed_args, remaining_args, capacity = parse(args)
 
   # Call the function.
@@ -717,7 +718,7 @@ def _CallAndUpdateTrace(component, args, component_trace, treatment='class',
   return component, remaining_args
 
 
-def _MakeParseFn(fn, metadata):
+def _MakeParseFn(fn, metadata, variable_env):
   """Creates a parse function for fn.
 
   Args:
@@ -743,7 +744,7 @@ def _MakeParseFn(fn, metadata):
     # Note: _ParseArgs modifies kwargs.
     parsed_args, kwargs, remaining_args, capacity = _ParseArgs(
         fn_spec.args, fn_spec.defaults, num_required_args, kwargs,
-        remaining_args, metadata)
+        remaining_args, metadata, variable_env)
 
     if fn_spec.varargs or fn_spec.varkw:
       # If we're allowed *varargs or **kwargs, there's always capacity.
@@ -764,7 +765,7 @@ def _MakeParseFn(fn, metadata):
       varargs = []
 
     for index, value in enumerate(varargs):
-      varargs[index] = _ParseValue(value, None, None, metadata)
+      varargs[index] = _ParseValue(value, None, None, metadata, variable_env)
 
     varargs = parsed_args + varargs
     remaining_args += remaining_kwargs
@@ -776,7 +777,7 @@ def _MakeParseFn(fn, metadata):
 
 
 def _ParseArgs(fn_args, fn_defaults, num_required_args, kwargs,
-               remaining_args, metadata):
+               remaining_args, metadata, variable_env):
   """Parses the positional and named arguments from the available supplied args.
 
   Modifies kwargs, removing args as they are used.
@@ -810,13 +811,13 @@ def _ParseArgs(fn_args, fn_defaults, num_required_args, kwargs,
   for index, arg in enumerate(fn_args):
     value = kwargs.pop(arg, None)
     if value is not None:  # A value is specified at the command line.
-      value = _ParseValue(value, index, arg, metadata)
+      value = _ParseValue(value, index, arg, metadata, variable_env)
       parsed_args.append(value)
     else:  # No value has been explicitly specified.
       if remaining_args and accepts_positional_args:
         # Use a positional arg.
         value = remaining_args.pop(0)
-        value = _ParseValue(value, index, arg, metadata)
+        value = _ParseValue(value, index, arg, metadata, variable_env)
         parsed_args.append(value)
       elif index < num_required_args:
         raise FireError(
@@ -829,7 +830,7 @@ def _ParseArgs(fn_args, fn_defaults, num_required_args, kwargs,
         parsed_args.append(fn_defaults[default_index])
 
   for key, value in kwargs.items():
-    kwargs[key] = _ParseValue(value, None, key, metadata)
+    kwargs[key] = _ParseValue(value, None, key, metadata, variable_env)
 
   return parsed_args, kwargs, remaining_args, capacity
 
@@ -975,7 +976,7 @@ def _IsMultiCharFlag(argument):
   return argument.startswith('--') or re.match('^-[a-zA-Z]', argument)
 
 
-def _ParseValue(value, index, arg, metadata):
+def _ParseValue(value, index, arg, metadata, variable_env):
   """Parses value, a string, into the appropriate type.
 
   The function used to parse value is determined by the remaining arguments.
@@ -988,8 +989,8 @@ def _ParseValue(value, index, arg, metadata):
   Returns:
     value, parsed into the appropriate type for calling a function.
   """
-  if not isinstance(value, str):
-    return value
+  if value in variable_env:
+      return variable_env[value]
   parse_fn = parser.DefaultParseValue
 
   # We check to see if any parse function from the fn metadata applies here.
