@@ -624,6 +624,7 @@ def _Fire(component, args, parsed_flag_args, context, name=None):
 
   if interactive:
     variables = context.copy()
+    variables.update(variable_env)
 
     if name is not None:
       variables[name] = initial_component
