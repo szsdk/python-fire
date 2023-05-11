@@ -78,7 +78,7 @@ if six.PY34:
   import asyncio  # pylint: disable=import-error,g-import-not-at-top  # pytype: disable=import-error
 
 
-def Fire(component=None, command=None, name=None, serialize=None):
+def Fire(component=None, command=None, name=None, serialize=None, context=None):
   """This function, Fire, is the main entrypoint for Python Fire.
 
   Executes a command either from the `command` argument or from sys.argv by
@@ -128,8 +128,9 @@ def Fire(component=None, command=None, name=None, serialize=None):
   argparser = parser.CreateParser()
   parsed_flag_args, unused_args = argparser.parse_known_args(flag_args)
 
-  context = {}
-  if parsed_flag_args.interactive or component is None:
+  if context is None:
+      context = {}
+  if parsed_flag_args.interactive or not context:
     # Determine the calling context.
     caller = inspect.stack()[1]
     caller_frame = caller[0]
@@ -451,22 +452,18 @@ def _Fire(component, args, parsed_flag_args, context, name=None):
 
     saved_args = []
     used_separator = False
-    if separator in remaining_args:
-      # For the current component, only use arguments up to the separator.
-      separator_index = remaining_args.index(separator)
-      saved_args = remaining_args[separator_index + 1:]
+    separator_index = -1
+    for ai, ra in enumerate(remaining_args):
+      if ra[0] == "@" or ra == "-":
+        separator_index = ai
+        break
+    if separator_index != -1:
+      if remaining_args[separator_index][0] == "@":
+        saved_args = remaining_args[separator_index:]
+      else:
+        saved_args = remaining_args[separator_index+1:]
       remaining_args = remaining_args[:separator_index]
       used_separator = True
-    else:
-      at_index = -1
-      for ai, ra in enumerate(remaining_args):
-        if ra[0] == "@":
-          at_index = ai
-          break
-      if at_index != -1:
-        saved_args = remaining_args[at_index:]
-        remaining_args = remaining_args[:at_index]
-        used_separator = True
     assert separator not in remaining_args
     if len(remaining_args) == 0 and len(saved_args) > 0 and isinstance(saved_args[0], str):
       if saved_args[0] == "@":
