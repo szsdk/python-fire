@@ -457,17 +457,26 @@ def _Fire(component, args, parsed_flag_args, context, name=None):
       saved_args = remaining_args[separator_index + 1:]
       remaining_args = remaining_args[:separator_index]
       used_separator = True
+    else:
+      at_index = -1
+      for ai, ra in enumerate(remaining_args):
+        if ra[0] == "@":
+          at_index = ai
+          break
+      if at_index != -1:
+        saved_args = remaining_args[at_index:]
+        remaining_args = remaining_args[:at_index]
+        used_separator = True
     assert separator not in remaining_args
-
-    if len(remaining_args) > 0 and isinstance(remaining_args[0], str):
-      if remaining_args[0] == "@":
+    if len(remaining_args) == 0 and len(saved_args) > 0 and isinstance(saved_args[0], str):
+      if saved_args[0] == "@":
         variable_env["_"] = component
-        remaining_args.pop(0)
+        saved_args.pop(0)
         component = context.copy()
         component.update(variable_env)
-      elif remaining_args[0][0] == "@":
-        variable_env[remaining_args[0][1:]] = component
-        remaining_args.pop(0)
+      elif saved_args[0][0] == "@":
+        variable_env[saved_args[0][1:]] = component
+        saved_args.pop(0)
         component = context.copy()
         component.update(variable_env)
 
