@@ -465,7 +465,15 @@ def _Fire(component, args, parsed_flag_args, context, name=None):
       remaining_args = remaining_args[:separator_index]
       used_separator = True
     assert separator not in remaining_args
-    if len(remaining_args) == 0 and len(saved_args) > 0 and isinstance(saved_args[0], str):
+    handled = False
+    candidate_errors = []
+
+    is_callable = inspect.isclass(component) or inspect.isroutine(component)
+    is_callable_object = callable(component) and not is_callable
+    is_sequence = isinstance(component, (list, tuple))
+    is_map = isinstance(component, dict) or inspectutils.IsNamedTuple(component)
+
+    if not (is_callable or is_callable_object) and len(remaining_args)==0 and len(saved_args) > 0 and isinstance(saved_args[0], str):
       if saved_args[0] == "@":
         variable_env["_"] = component
         saved_args.pop(0)
@@ -477,13 +485,6 @@ def _Fire(component, args, parsed_flag_args, context, name=None):
         component = context.copy()
         component.update(variable_env)
 
-    handled = False
-    candidate_errors = []
-
-    is_callable = inspect.isclass(component) or inspect.isroutine(component)
-    is_callable_object = callable(component) and not is_callable
-    is_sequence = isinstance(component, (list, tuple))
-    is_map = isinstance(component, dict) or inspectutils.IsNamedTuple(component)
 
     if not handled and is_callable:
       # The component is a class or a routine; we'll try to initialize it or
